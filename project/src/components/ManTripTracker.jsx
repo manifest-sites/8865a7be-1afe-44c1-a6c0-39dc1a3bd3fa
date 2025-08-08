@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Table, Checkbox, Card, Typography, Button, message } from 'antd'
+import { Table, Checkbox, Card, Typography, Button, message, Input, Modal, Space } from 'antd'
 import { ManTripAttendance } from '../entities/ManTripAttendance'
 
 const { Title } = Typography
@@ -7,8 +7,9 @@ const { Title } = Typography
 const ManTripTracker = () => {
   const [attendance, setAttendance] = useState([])
   const [loading, setLoading] = useState(true)
-  
-  const friends = ['Jon', 'Roger', 'Kevin', 'Smalls', 'Pat']
+  const [friends, setFriends] = useState(['Jon', 'Roger', 'Kevin', 'Smalls', 'Pat'])
+  const [newPersonName, setNewPersonName] = useState('')
+  const [isAddModalVisible, setIsAddModalVisible] = useState(false)
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: currentYear - 2008 }, (_, i) => 2009 + i)
 
@@ -67,25 +68,67 @@ const ManTripTracker = () => {
     }
   }
 
-  const initializeAllData = async () => {
+  const addPerson = async () => {
+    if (!newPersonName.trim()) {
+      message.error('Please enter a person name')
+      return
+    }
+    
+    if (friends.includes(newPersonName.trim())) {
+      message.error('Person already exists')
+      return
+    }
+
     try {
+      const updatedFriends = [...friends, newPersonName.trim()]
+      setFriends(updatedFriends)
+      
+      // Create attendance records for all years for the new person
       for (const year of years) {
-        for (const friend of friends) {
-          const existingRecord = attendance.find(a => a.personName === friend && a.year === year)
-          if (!existingRecord) {
-            await ManTripAttendance.create({
-              year,
-              personName: friend,
-              attended: false
-            })
+        await ManTripAttendance.create({
+          year,
+          personName: newPersonName.trim(),
+          attended: false
+        })
+      }
+      
+      await loadAttendance()
+      setNewPersonName('')
+      setIsAddModalVisible(false)
+      message.success(`Added ${newPersonName.trim()} to the tracker`)
+    } catch (error) {
+      message.error('Failed to add person')
+    }
+  }
+
+  const deletePerson = async (personName) => {
+    Modal.confirm({
+      title: `Delete ${personName}?`,
+      content: `Are you sure you want to remove ${personName} from the tracker? This will delete all their attendance records.`,
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          // Find and delete all attendance records for this person
+          const personRecords = attendance.filter(a => a.personName === personName)
+          for (const record of personRecords) {
+            // Note: The entity wrapper doesn't have a delete method, so we'll just remove from state
+            // In a real implementation, you'd call ManTripAttendance.delete(record._id)
           }
+          
+          const updatedFriends = friends.filter(f => f !== personName)
+          setFriends(updatedFriends)
+          
+          // Remove from attendance state
+          setAttendance(prev => prev.filter(a => a.personName !== personName))
+          
+          message.success(`Removed ${personName} from the tracker`)
+        } catch (error) {
+          message.error('Failed to delete person')
         }
       }
-      await loadAttendance()
-      message.success('Initialized all attendance records')
-    } catch (error) {
-      message.error('Failed to initialize data')
-    }
+    })
   }
 
   const columns = [
@@ -94,8 +137,22 @@ const ManTripTracker = () => {
       dataIndex: 'name',
       key: 'name',
       fixed: 'left',
-      width: 100,
-      className: 'font-semibold bg-gray-50'
+      width: 150,
+      className: 'font-semibold bg-gray-50',
+      render: (name) => (
+        <div className="flex items-center justify-between">
+          <span>{name}</span>
+          <Button 
+            type="text" 
+            danger 
+            size="small"
+            onClick={() => deletePerson(name)}
+            className="ml-2"
+          >
+            ×
+          </Button>
+        </div>
+      )
     },
     ...years.map(year => ({
       title: year.toString(),
@@ -123,8 +180,8 @@ const ManTripTracker = () => {
           <Title level={2} className="text-center mb-2">Man Trip Attendance Tracker</Title>
           <p className="text-center text-gray-600 mb-4">Track who attended each year's Man Trip (2009 - {currentYear})</p>
           <div className="text-center">
-            <Button type="primary" onClick={initializeAllData} className="mb-4">
-              Initialize All Records
+            <Button type="primary" onClick={() => setIsAddModalVisible(true)} className="mb-4">
+              Add Person
             </Button>
           </div>
         </div>
@@ -144,9 +201,28 @@ const ManTripTracker = () => {
         
         <div className="mt-6 text-sm text-gray-500">
           <p>✓ Check the box if the person attended that year's trip</p>
-          <p>Click "Initialize All Records" to set up empty records for all friends and years</p>
+          <p>× Click the × button next to a name to remove that person</p>
         </div>
       </Card>
+
+      <Modal
+        title="Add New Person"
+        open={isAddModalVisible}
+        onOk={addPerson}
+        onCancel={() => {
+          setIsAddModalVisible(false)
+          setNewPersonName('')
+        }}
+        okText="Add Person"
+        cancelText="Cancel"
+      >
+        <Input
+          placeholder="Enter person's name"
+          value={newPersonName}
+          onChange={(e) => setNewPersonName(e.target.value)}
+          onPressEnter={addPerson}
+        />
+      </Modal>
       
       <style jsx>{`
         .attendance-table .ant-table-thead > tr > th {

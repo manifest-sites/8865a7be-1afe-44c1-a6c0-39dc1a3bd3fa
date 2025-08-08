@@ -43,27 +43,96 @@ const ManTripTracker = () => {
   const toggleAttendance = async (personName, year, currentStatus) => {
     try {
       const existingId = getAttendanceId(personName, year)
+      const newStatus = !currentStatus
       
+      // Optimistic update - update UI immediately
+      if (existingId) {
+        setAttendance(prev => 
+          prev.map(record => 
+            record._id === existingId 
+              ? { ...record, attended: newStatus }
+              : record
+          )
+        )
+      } else {
+        // Add temporary record for optimistic update
+        const tempRecord = {
+          _id: `temp_${Date.now()}_${personName}_${year}`,
+          personName,
+          year,
+          attended: newStatus
+        }
+        setAttendance(prev => [...prev, tempRecord])
+      }
+      
+      // Make API call in background
       if (existingId) {
         const response = await ManTripAttendance.update(existingId, {
-          attended: !currentStatus
+          attended: newStatus
         })
         if (response.success) {
-          await loadAttendance()
-          message.success(`Updated ${personName}'s attendance for ${year}`)
+          // Replace with real data from server
+          setAttendance(prev => 
+            prev.map(record => 
+              record._id === existingId 
+                ? response.data
+                : record
+            )
+          )
+        } else {
+          // Revert optimistic update on failure
+          setAttendance(prev => 
+            prev.map(record => 
+              record._id === existingId 
+                ? { ...record, attended: currentStatus }
+                : record
+            )
+          )
+          message.error('Failed to update attendance')
         }
       } else {
         const response = await ManTripAttendance.create({
           year,
           personName,
-          attended: !currentStatus
+          attended: newStatus
         })
         if (response.success) {
-          await loadAttendance()
-          message.success(`Added ${personName}'s attendance for ${year}`)
+          // Replace temp record with real record from server
+          const tempId = `temp_${Date.now()}_${personName}_${year}`
+          setAttendance(prev => 
+            prev.map(record => 
+              record._id.toString().startsWith(`temp_`) && record.personName === personName && record.year === year
+                ? response.data
+                : record
+            )
+          )
+        } else {
+          // Remove temp record on failure
+          setAttendance(prev => 
+            prev.filter(record => 
+              !(record._id.toString().startsWith('temp_') && record.personName === personName && record.year === year)
+            )
+          )
+          message.error('Failed to create attendance record')
         }
       }
     } catch (error) {
+      // Revert optimistic update on error
+      if (existingId) {
+        setAttendance(prev => 
+          prev.map(record => 
+            record._id === existingId 
+              ? { ...record, attended: currentStatus }
+              : record
+          )
+        )
+      } else {
+        setAttendance(prev => 
+          prev.filter(record => 
+            !(record._id.toString().startsWith('temp_') && record.personName === personName && record.year === year)
+          )
+        )
+      }
       message.error('Failed to update attendance')
     }
   }

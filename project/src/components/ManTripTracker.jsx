@@ -1,21 +1,49 @@
 import { useState, useEffect } from 'react'
 import { Table, Checkbox, Card, Typography, Button, message, Input, Modal, Space } from 'antd'
 import { ManTripAttendance } from '../entities/ManTripAttendance'
+import { Person } from '../entities/Person'
 
 const { Title } = Typography
 
 const ManTripTracker = () => {
   const [attendance, setAttendance] = useState([])
   const [loading, setLoading] = useState(true)
-  const [friends, setFriends] = useState(['Jon', 'Roger', 'Kevin', 'Smalls', 'Pat'])
+  const [friends, setFriends] = useState([])
   const [newPersonName, setNewPersonName] = useState('')
   const [isAddModalVisible, setIsAddModalVisible] = useState(false)
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: currentYear - 2008 }, (_, i) => 2009 + i)
 
   useEffect(() => {
+    loadPeople()
     loadAttendance()
   }, [])
+
+  const loadPeople = async () => {
+    try {
+      const response = await Person.list()
+      if (response.success && response.data.length > 0) {
+        // Load existing people from database
+        const activePeople = response.data.filter(person => person.isActive).map(person => person.name)
+        setFriends(activePeople)
+      } else {
+        // Initialize with default people if none exist
+        const defaultPeople = ['Jon', 'Roger', 'Kevin', 'Smalls', 'Pat']
+        for (const personName of defaultPeople) {
+          await Person.create({
+            name: personName,
+            isActive: true
+          })
+        }
+        setFriends(defaultPeople)
+      }
+    } catch (error) {
+      // Fallback to default people if database fails
+      const defaultPeople = ['Jon', 'Roger', 'Kevin', 'Smalls', 'Pat']
+      setFriends(defaultPeople)
+      message.error('Failed to load people, using defaults')
+    }
+  }
 
   const loadAttendance = async () => {
     setLoading(true)
@@ -149,6 +177,12 @@ const ManTripTracker = () => {
     }
 
     try {
+      // Save person to database
+      await Person.create({
+        name: newPersonName.trim(),
+        isActive: true
+      })
+      
       const updatedFriends = [...friends, newPersonName.trim()]
       setFriends(updatedFriends)
       
@@ -173,23 +207,28 @@ const ManTripTracker = () => {
   const deletePerson = async (personName) => {
     Modal.confirm({
       title: `Delete ${personName}?`,
-      content: `Are you sure you want to remove ${personName} from the tracker? This will delete all their attendance records.`,
+      content: `Are you sure you want to remove ${personName} from the tracker? This will hide them from the tracker but preserve their attendance history.`,
       okText: 'Yes, Delete',
       okType: 'danger',
       cancelText: 'Cancel',
       onOk: async () => {
         try {
-          // Find and delete all attendance records for this person
-          const personRecords = attendance.filter(a => a.personName === personName)
-          for (const record of personRecords) {
-            // Note: The entity wrapper doesn't have a delete method, so we'll just remove from state
-            // In a real implementation, you'd call ManTripAttendance.delete(record._id)
+          // Find the person in the database and mark as inactive
+          const peopleResponse = await Person.list()
+          if (peopleResponse.success) {
+            const person = peopleResponse.data.find(p => p.name === personName)
+            if (person) {
+              await Person.update(person._id, {
+                name: personName,
+                isActive: false
+              })
+            }
           }
           
           const updatedFriends = friends.filter(f => f !== personName)
           setFriends(updatedFriends)
           
-          // Remove from attendance state
+          // Remove from attendance state display (but keep in database)
           setAttendance(prev => prev.filter(a => a.personName !== personName))
           
           message.success(`Removed ${personName} from the tracker`)

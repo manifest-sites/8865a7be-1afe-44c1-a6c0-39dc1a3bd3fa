@@ -1,0 +1,23 @@
+{
+  "name": "ManTripAttendance",
+  "type": "object",
+  "properties": {
+    "year": {
+      "type": "number",
+      "description": "Year of the Man Trip (starting from 2009)"
+    },
+    "personName": {
+      "type": "string",
+      "description": "Name of the person (Jon, Roger, Kevin, Smalls, Pat)"
+    },
+    "attended": {
+      "type": "boolean",
+      "description": "Whether this person attended the trip in this year"
+    }
+  },
+  "required": [
+    "year",
+    "personName",
+    "attended"
+  ]
+}
